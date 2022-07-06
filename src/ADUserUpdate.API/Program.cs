@@ -27,4 +27,8 @@ app.MapGet("/expired", ([FromServices] IUserService userService)
     => userService.GetExpiredUsers()
 );
 
+app.MapPost("/disable", ([FromQuery(Name = "upn")] string upn, [FromServices] IUserService userService)
+    => userService.DisableUser(upn)
+);
+
 app.Run();

@@ -7,6 +7,7 @@ namespace ADUserUpdate.API
     internal class UserService : IUserService
     {
         private readonly DirectoryEntry _ldapConnection;
+        private readonly PrincipalContext _context;
 
         public UserService(IOptions<AppSettings> appSettings)
         {
@@ -15,6 +16,7 @@ namespace ADUserUpdate.API
                 Path = appSettings.Value.Path,
                 AuthenticationType = AuthenticationTypes.Secure
             };
+            _context = new PrincipalContext(ContextType.Domain);
         }
 
         public User GetUser(string upn)
@@ -24,15 +26,15 @@ namespace ADUserUpdate.API
                 return new User()
                 {
                     UPN = upn,
-                    EmploymentType = user.Properties["employeeType"].Value as string,
-                    ManagerUPN = GetManagerUPN(user.Properties["manager"].Value as string),
-                    Department = user.Properties["department"].Value as string,
-                    Community = user.Properties["l"].Value as string,
-                    BuildingName = user.Properties["physicalDeliveryOfficeName"].Value as string,
-                    FloorNumber = user.Properties["floorNumber"].Value as string,
-                    TelephoneNumber = user.Properties["telephoneNumber"].Value as string,
-                    TelephoneNumberExt = user.Properties["telephoneNumberExt"].Value as string,
-                    PreferredLanguage = user.Properties["preferredLanguage"].Value as string
+                    EmploymentType = user.Properties[Constants.EmploymentType].Value as string,
+                    ManagerUPN = GetManagerUPN(user.Properties[Constants.Manager].Value as string),
+                    Department = user.Properties[Constants.Department].Value as string,
+                    Community = user.Properties[Constants.Community].Value as string,
+                    BuildingName = user.Properties[Constants.BuildingName].Value as string,
+                    FloorNumber = user.Properties[Constants.FloorNumber].Value as string,
+                    TelephoneNumber = user.Properties[Constants.TelephoneNumber].Value as string,
+                    TelephoneNumberExt = user.Properties[Constants.TelephoneNumberExt].Value as string,
+                    PreferredLanguage = user.Properties[Constants.PreferredLanguage].Value as string
                 };
             }
             return null;
@@ -44,13 +46,10 @@ namespace ADUserUpdate.API
 
             if (string.IsNullOrWhiteSpace(upn)) return false;
 
-            using var search = new DirectorySearcher(_ldapConnection, $"(&(objectClass=person)(objectClass=user)(userPrincipalName={upn}))");
-            search.SearchScope = SearchScope.Subtree;
-            var result = search.FindOne();
+            var p = UserPrincipal.FindByIdentity(_context, IdentityType.UserPrincipalName, upn);
+            if (p == null) return false;
 
-            if (result == null) return false;
-
-            user = new DirectoryEntry(result.Path);
+            user = p.GetUnderlyingObject() as DirectoryEntry;
             return true;
         }
 
@@ -58,14 +57,9 @@ namespace ADUserUpdate.API
         {
             if (!string.IsNullOrWhiteSpace(distinguishedName))
             {
-                using var search = new DirectorySearcher(_ldapConnection, $"(&(objectClass=person)(objectClass=user)(distinguishedName={distinguishedName}))");
-                var result = search.FindOne();
-                if (result != null)
-                {
-                    var entryManager = new DirectoryEntry();
-                    entryManager = result.GetDirectoryEntry();
-                    return entryManager.Properties["userPrincipalName"].Value as string;
-                }
+                var manager = UserPrincipal.FindByIdentity(_context, IdentityType.DistinguishedName, distinguishedName);
+                if (manager != null)
+                    return manager.UserPrincipalName;
             }
             return string.Empty;
         }
@@ -75,59 +69,58 @@ namespace ADUserUpdate.API
             if (GetUserByUPN(user.UPN, out var userToUpdate))
             {
                 if (string.IsNullOrWhiteSpace(user.EmploymentType))
-                    userToUpdate.Properties["employeeType"].Clear();
+                    userToUpdate.Properties[Constants.EmploymentType].Clear();
                 else
-                    userToUpdate.Properties["employeeType"].Value = user.EmploymentType;
+                    userToUpdate.Properties[Constants.EmploymentType].Value = user.EmploymentType;
 
 
                 if (string.IsNullOrEmpty(user.ManagerUPN))
-                    userToUpdate.Properties["manager"].Clear();
+                    userToUpdate.Properties[Constants.Manager].Clear();
                 else
                     if (GetUserByUPN(user.ManagerUPN, out var manager))
-                    userToUpdate.Properties["manager"].Value = manager.Properties["distinguishedName"].Value as string;
+                    userToUpdate.Properties[Constants.Manager].Value = manager.Properties[Constants.DistinguishedName].Value as string;
 
 
                 if (string.IsNullOrWhiteSpace(user.Department))
-                    userToUpdate.Properties["department"].Clear();
+                    userToUpdate.Properties[Constants.Department].Clear();
                 else
-                    userToUpdate.Properties["department"].Value = user.Department;
+                    userToUpdate.Properties[Constants.Department].Value = user.Department;
 
 
-                userToUpdate.Properties["l"].Value = user.Community;
-                if (string.IsNullOrWhiteSpace(user.Department))
-                    userToUpdate.Properties["department"].Clear();
+                if (string.IsNullOrWhiteSpace(user.Community))
+                    userToUpdate.Properties[Constants.Community].Clear();
                 else
-                    userToUpdate.Properties["department"].Value = user.Department;
+                    userToUpdate.Properties[Constants.Community].Value = user.Community;
 
 
                 if (string.IsNullOrWhiteSpace(user.BuildingName))
-                    userToUpdate.Properties["physicalDeliveryOfficeName"].Clear();
+                    userToUpdate.Properties[Constants.BuildingName].Clear();
                 else
-                    userToUpdate.Properties["physicalDeliveryOfficeName"].Value = user.BuildingName;
+                    userToUpdate.Properties[Constants.BuildingName].Value = user.BuildingName;
 
 
                 if (string.IsNullOrWhiteSpace(user.FloorNumber))
-                    userToUpdate.Properties["floorNumber"].Clear();
+                    userToUpdate.Properties[Constants.FloorNumber].Clear();
                 else
-                    userToUpdate.Properties["floorNumber"].Value = user.FloorNumber;
+                    userToUpdate.Properties[Constants.FloorNumber].Value = user.FloorNumber;
 
 
                 if (string.IsNullOrWhiteSpace(user.TelephoneNumber))
-                    userToUpdate.Properties["telephoneNumber"].Clear();
+                    userToUpdate.Properties[Constants.TelephoneNumber].Clear();
                 else
-                    userToUpdate.Properties["telephoneNumber"].Value = user.TelephoneNumber;
+                    userToUpdate.Properties[Constants.TelephoneNumber].Value = user.TelephoneNumber;
 
 
                 if (string.IsNullOrWhiteSpace(user.TelephoneNumberExt))
-                    userToUpdate.Properties["telephoneNumberExt"].Clear();
+                    userToUpdate.Properties[Constants.TelephoneNumberExt].Clear();
                 else
-                    userToUpdate.Properties["telephoneNumberExt"].Value = user.TelephoneNumberExt;
+                    userToUpdate.Properties[Constants.TelephoneNumberExt].Value = user.TelephoneNumberExt;
 
 
                 if (string.IsNullOrWhiteSpace(user.PreferredLanguage))
-                    userToUpdate.Properties["preferredLanguage"].Clear();
+                    userToUpdate.Properties[Constants.PreferredLanguage].Clear();
                 else
-                    userToUpdate.Properties["preferredLanguage"].Value = user.PreferredLanguage;
+                    userToUpdate.Properties[Constants.PreferredLanguage].Value = user.PreferredLanguage;
 
                 userToUpdate.CommitChanges();
             }
@@ -136,28 +129,40 @@ namespace ADUserUpdate.API
         public object GetExpiringUsers(int daysFromToday)
         {
             var filterDate = DateTime.Now.AddDays(daysFromToday);
-            var context = new PrincipalContext(ContextType.Domain);
-            return UserPrincipal.FindByExpirationTime(context, filterDate, System.DirectoryServices.AccountManagement.MatchType.LessThan)
+            return UserPrincipal.FindByExpirationTime(_context, filterDate, System.DirectoryServices.AccountManagement.MatchType.LessThan)
                 .Where(user => user.AccountExpirationDate != null && user.AccountExpirationDate.Value > DateTime.Now)
                 .Select(user => new
                 {
                     UPN = user.UserPrincipalName,
                     Name = user.Name,
-                    AccountExpirationDate = user.AccountExpirationDate.Value.ToLocalTime().ToString("yyyy-MM-dd")
+                    GivenName = user.GivenName,
+                    AccountExpirationDate = user.AccountExpirationDate.Value.ToLocalTime().ToString(Constants.DateFormat),
+                    Enabled = user.Enabled.Value
                 });
         }
 
         public object GetExpiredUsers()
         {
-            var context = new PrincipalContext(ContextType.Domain);
-            return UserPrincipal.FindByExpirationTime(context, DateTime.Now, System.DirectoryServices.AccountManagement.MatchType.LessThan)
+            return UserPrincipal.FindByExpirationTime(_context, DateTime.Now, System.DirectoryServices.AccountManagement.MatchType.LessThan)
                 .Where(user => user.AccountExpirationDate != null)
                 .Select(user => new
                 {
                     UPN = user.UserPrincipalName,
                     Name = user.Name,
-                    AccountExpirationDate = user.AccountExpirationDate.Value.ToLocalTime().ToString("yyyy-MM-dd")
+                    GivenName = user.GivenName,
+                    AccountExpirationDate = user.AccountExpirationDate.Value.ToLocalTime().ToString(Constants.DateFormat),
+                    Enabled = user.Enabled.Value
                 });
+        }
+
+        public void DisableUser(string upn)
+        {
+            if (string.IsNullOrWhiteSpace(upn)) return;
+
+            var p = UserPrincipal.FindByIdentity(_context, IdentityType.UserPrincipalName, upn);
+            if (p == null) return;
+            p.Enabled = false;
+            p.Save(_context);
         }
     }
 
@@ -170,5 +175,7 @@ namespace ADUserUpdate.API
         object GetExpiringUsers(int daysFromToday);
 
         object GetExpiredUsers();
+
+        void DisableUser(string upn);
     }
 }
