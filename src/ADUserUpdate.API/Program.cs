@@ -19,4 +19,12 @@ app.MapPost("/", ([FromServices] IUserService userService, [FromBody] User user)
     => userService.UpdateUser(user)
 );
 
+app.MapGet("/expiring", ([FromQuery(Name = "daysFromToday")] int daysFromToday, [FromServices] IUserService userService)
+    => userService.GetExpiringUsers(daysFromToday)
+);
+
+app.MapGet("/expired", ([FromServices] IUserService userService)
+    => userService.GetExpiredUsers()
+);
+
 app.Run();

@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Options;
 using System.DirectoryServices;
+using System.DirectoryServices.AccountManagement;
 
 namespace ADUserUpdate.API
 {
@@ -43,7 +44,7 @@ namespace ADUserUpdate.API
 
             if (string.IsNullOrWhiteSpace(upn)) return false;
 
-            using var search = new DirectorySearcher(_ldapConnection, $"(&(objectClass=user)(userPrincipalName={upn}))");
+            using var search = new DirectorySearcher(_ldapConnection, $"(&(objectClass=person)(objectClass=user)(userPrincipalName={upn}))");
             search.SearchScope = SearchScope.Subtree;
             var result = search.FindOne();
 
@@ -57,7 +58,7 @@ namespace ADUserUpdate.API
         {
             if (!string.IsNullOrWhiteSpace(distinguishedName))
             {
-                using var search = new DirectorySearcher(_ldapConnection, $"(&(objectClass=user)(distinguishedName={distinguishedName}))");
+                using var search = new DirectorySearcher(_ldapConnection, $"(&(objectClass=person)(objectClass=user)(distinguishedName={distinguishedName}))");
                 var result = search.FindOne();
                 if (result != null)
                 {
@@ -131,6 +132,33 @@ namespace ADUserUpdate.API
                 userToUpdate.CommitChanges();
             }
         }
+
+        public object GetExpiringUsers(int daysFromToday)
+        {
+            var filterDate = DateTime.Now.AddDays(daysFromToday);
+            var context = new PrincipalContext(ContextType.Domain);
+            return UserPrincipal.FindByExpirationTime(context, filterDate, System.DirectoryServices.AccountManagement.MatchType.LessThan)
+                .Where(user => user.AccountExpirationDate != null && user.AccountExpirationDate.Value > DateTime.Now)
+                .Select(user => new
+                {
+                    UPN = user.UserPrincipalName,
+                    Name = user.Name,
+                    AccountExpirationDate = user.AccountExpirationDate.Value.ToLocalTime().ToString("yyyy-MM-dd")
+                });
+        }
+
+        public object GetExpiredUsers()
+        {
+            var context = new PrincipalContext(ContextType.Domain);
+            return UserPrincipal.FindByExpirationTime(context, DateTime.Now, System.DirectoryServices.AccountManagement.MatchType.LessThan)
+                .Where(user => user.AccountExpirationDate != null)
+                .Select(user => new
+                {
+                    UPN = user.UserPrincipalName,
+                    Name = user.Name,
+                    AccountExpirationDate = user.AccountExpirationDate.Value.ToLocalTime().ToString("yyyy-MM-dd")
+                });
+        }
     }
 
     internal interface IUserService
@@ -138,5 +166,9 @@ namespace ADUserUpdate.API
         User GetUser(string upn);
 
         void UpdateUser(User user);
+
+        object GetExpiringUsers(int daysFromToday);
+
+        object GetExpiredUsers();
     }
 }
